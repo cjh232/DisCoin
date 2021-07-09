@@ -1,0 +1,2 @@
+# DisCoin
+ Discord Cryptocurrency
