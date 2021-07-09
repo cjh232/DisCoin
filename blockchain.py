@@ -4,12 +4,15 @@ from datetime import date, datetime, timezone
 
 class Blockchain:
 
-    def __init__(self, stream = None):
+    def __init__(self, version, difficulty, stream = None):
         self.chain = []
         self.transactions = []
+        self.version = version
+        self.difficulty = difficulty
 
         if not stream:
-            self.chain.append(self.create_genesis())
+            self.genesis_block = self.create_genesis()
+            self.chain.append(self.genesis_block)
         else:
             self.build_from_stream(stream)
 
@@ -17,6 +20,7 @@ class Blockchain:
     def create_block(self, index, time, nonce, tx, mrkl_root, curr_hash, prev_hash):
         return {
         'index': str(index),
+        "ver": self.version,
         'time': time,
         'nonce': str(nonce),
         'tx': tx,
@@ -51,7 +55,9 @@ class Blockchain:
     def mine_block(self):
         index = len(self.chain)
 
-        previous_block = self.chain[index - 1]
+
+        
+        previous_block = self.chain[len(self.chain) - 1]
 
         time = datetime.now(timezone.utc).strftime("%d-%b-%Y (%H:%M:%S.%f)")
         idx = str(index)
@@ -65,7 +71,7 @@ class Blockchain:
         encoded_header = b''.join(encoded_header_vals)
         block_hash = hashlib.sha256(encoded_header).hexdigest()
 
-        while block_hash[:2] != '00':
+        while block_hash[:self.difficulty] != ''.zfill(self.difficulty):
             nonce = nonce + 1
             header_vals = [time, idx, str(nonce), mrkl_root, previous_hash]
             encoded_header_vals = [val.encode() for val in header_vals]
@@ -84,6 +90,8 @@ class Blockchain:
         )
 
         self.chain.append(block)
+
+        self.transactions = []
         return [block, index]
 
     def print_chain(self):
@@ -92,3 +100,23 @@ class Blockchain:
 
     def add_transaction(self, transaction):
         self.transactions.append(transaction)
+
+    def is_valid(self):
+
+        if(len(self.chain) == 1):
+            return True
+        
+        idx = 1
+        prev_block = self.chain[0]
+
+        while idx < len(self.chain):
+            curr_block = self.chain[idx]
+
+            if prev_block["hash"] != curr_block["previous_hash"]:
+                return False
+
+            idx = idx + 1
+            prev_block = curr_block
+
+    def get_genesis_block(self):
+        return self.genesis_block
