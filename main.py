@@ -1,6 +1,9 @@
 import firebase_admin
 from firebase_admin import firestore
 from blockchain import Blockchain
+import wallets
+import binascii
+import json
 
 
 CREDENTIALS_PATH = 'discoin-ae632-firebase-adminsdk-olger-6d18986a1e.json'
@@ -11,72 +14,44 @@ credentials = firebase_admin.credentials.Certificate(CREDENTIALS_PATH)
 default_app = firebase_admin.initialize_app(credentials)
 
 db = firestore.client()
-blocks_ref = db.collection('blocks')
-query = blocks_ref.order_by(
-    'index', direction=firestore.Query.ASCENDING)
 
-blocks_ref = db.collection('versions')
-version_query = blocks_ref.order_by(
-    'version_id', direction=firestore.Query.DESCENDING).limit(1)
+USER_NAME = 'Chris'
 
-[ version_res ] = [v for v in version_query.stream()]
+wallet_ref = db.collection('wallets').document(USER_NAME)
+key_ref = db.collection('public_keys').document(USER_NAME)
 
-version = version_res.to_dict()
-version_id = version["version_id"]
-difficulty = version["difficulty"]
+wallet_doc = wallet_ref.get()
+key_doc = key_ref.get()
 
-print(version_id, difficulty)
+if wallet_doc.exists:
+    wallet = wallet_doc.to_dict()
+    public_key = key_doc.to_dict()
 
-blocks_stream = query.stream()
+    encoded_private_key = wallet["private_key"].encode()
+    private_key_pair = wallets.build_private_key(encoded_private_key)
 
-chain = [block.to_dict() for block in query.stream()]
+    encoded_public_key = public_key["key"].encode()
+    public_key_pair = wallets.build_public_key(encoded_public_key)
 
-blockchain = Blockchain(version_id, int(difficulty), stream=blocks_stream) if len(chain) > 0 else Blockchain(version_id, int(difficulty), stream=None)
+    # print(key_pair.exportKey())
 
-# If chain returned by steam is empty, Blockchain class is created
-# with no paramets, causing a genesis block to be created. This needs
-# to be stored to the db.
+    transaction = {
+        "sender": "Alex",
+        "receiver": "John",
+        "amount": 3100
+    }
 
-if len(chain) < 1:
-    doc_ref = db.collection("blocks").document("0")
-    doc_ref.set(blockchain.get_genesis_block())
+    tx_encoded = json.dumps(transaction, sort_keys=True).encode()
+    signature = wallets.sign_transaction(tx_encoded, private_key_pair)
 
-new_transaction = {
-    "sender": "Chris",
-    "receiver": "bob",
-    "amount": 300
-}
+    # print('original:', signature)
 
-blockchain.add_transaction(new_transaction)
+    hex_sig = binascii.hexlify(signature)
 
-[new_block, index] = blockchain.mine_block()
+    print(signature == binascii.unhexlify(hex_sig))
 
-doc_ref = db.collection("blocks").document(str(index))
-doc_ref.set(new_block)
-
-new_transaction = {
-    "sender": "Alex",
-    "receiver": "John",
-    "amount": 3100
-}
-
-blockchain.add_transaction(new_transaction)
-
-new_transaction = {
-    "sender": "Alex",
-    "receiver": "Desmond",
-    "amount": 3100
-}
-
-blockchain.add_transaction(new_transaction)
-
-[new_block, index] = blockchain.mine_block()
-
-doc_ref = db.collection("blocks").document(str(index))
-doc_ref.set(new_block)
+    if wallets.verify_transaction(tx_encoded, public_key_pair, signature):
+        print('Valid transaction')
 
 
-# blockchain.print_chain()
-
-
-
+# TODO: Add function to create transaction so that it includes a signature
