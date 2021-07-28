@@ -2,36 +2,49 @@ import threading
 import hashlib
 import json
 import sys
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from random import randint
-import queue
+from collections import namedtuple
+
 import blockchain
-import textwrap
+
+Headers = namedtuple('Headers', [
+    'index',
+    'time',
+    'nonce',
+    'tx',
+    'mrkl_root',
+    'curr_hash',
+    'prev_hash'
+])
 
 
 class Miner:
-    def __init__(self, cv, address, version, difficulty, blockchain, mined_evt):
-        self._cv = cv
+    def __init__(self, address, version, _blockchain, mined_evt):
         self._address = address
-        self._version = version
-        self._difficulty = difficulty
-        self._blockchain = blockchain
+        self._version = version['id']
+        self._difficulty = version['difficulty']
+        self._blockchain = _blockchain
         self._mined_evt = mined_evt
+        self._t = None
 
     def start(self, headers, txs):
         self._t = threading.Thread(target=self.run, args=(headers, txs))
         self._t.start()
 
-    def create_hash(self, encoded_headers_arr, nonce):
+    @staticmethod
+    def create_hash(encoded_headers_arr, nonce):
 
         encoded_headers = b''.join(
             encoded_headers_arr + [str(nonce).encode()])
 
         return hashlib.sha256(encoded_headers).hexdigest()
 
-    def create_merkle_root(self, transactions):
-        def encode(transaction): return json.dumps(
-            transaction, sort_keys=True).encode()
+    @staticmethod
+    def create_merkle_root(transactions):
+        def encode(transaction):
+            return json.dumps(
+                transaction, sort_keys=True).encode()
 
         encoded_list = [encode(transaction) for transaction in transactions]
 
@@ -40,9 +53,6 @@ class Miner:
         return hashlib.sha256(encoded_bytes).hexdigest()
 
     def run(self, time, txs):
-        """
-        Headers order is -> idx, timestamp, mrk, prev_hash
-        """
         prev_block = self._blockchain.get_last_block()
 
         index = str(int(prev_block["index"]) + 1)
@@ -60,8 +70,10 @@ class Miner:
 
             if block_hash[:self._difficulty] == ''.zfill(self._difficulty):
 
-                block = self.create_block(
+                block_headers = Headers(
                     index, time, nonce, txs, mrkl_root, block_hash, prev_hash)
+
+                block = self.create_block(block_headers)
 
                 res = self._blockchain.offer_proof_of_work(
                     block, self._mined_evt)
@@ -71,7 +83,7 @@ class Miner:
             nonce = randint(0, sys.maxsize)
             block_hash = self.create_hash(encoded_header_arr, nonce)
 
-    def create_block(self, index, time, nonce, tx, mrkl_root, curr_hash, prev_hash):
+    def create_block(self, block_headers):
         """Create a new block
 
         Returns:
@@ -80,15 +92,15 @@ class Miner:
         """
 
         return {
-            'index': str(index),
+            'index': str(block_headers.index),
             "ver": self._version,
-            'time': time,
-            'nonce': str(nonce),
-            'tx': tx,
-            'n_tx': len(tx),
-            'mrkl_root': mrkl_root,
-            'hash': curr_hash,
-            'previous_hash': prev_hash,
+            'time': block_headers.time,
+            'nonce': str(block_headers.nonce),
+            'tx': block_headers.tx,
+            'n_tx': len(block_headers.tx),
+            'mrkl_root': block_headers.mrkl_root,
+            'hash': block_headers.curr_hash,
+            'previous_hash': block_headers.prev_hash,
             'relayed_by': self._address,
         }
 
@@ -100,7 +112,7 @@ lock = threading.Lock()
 blockchain = blockchain.Blockchain(1, 4, [], None, lock)
 
 
-def mine_block(blockchain):
+def mine_block():
     mined_evt = threading.Event()
 
     time_now = datetime.now(timezone.utc).strftime("%d-%b-%Y (%H:%M:%S.%f)")
@@ -117,7 +129,11 @@ def mine_block(blockchain):
     miners = []
 
     for public_address in wallets:
-        miners.append(Miner(1, public_address, 1, 4, blockchain, mined_evt))
+        version = {
+            'id': 1,
+            'difficulty': 4
+        }
+        miners.append(Miner(public_address, version, blockchain, mined_evt))
 
     for miner in miners:
         miner.start(time_now, [{'sender': 'me'}])
@@ -127,6 +143,6 @@ def mine_block(blockchain):
 
 
 for i in range(20):
-    mine_block(blockchain)
+    mine_block()
 
 blockchain.print_chain()
