@@ -18,7 +18,7 @@ class WalletFactory:
 
     STARTING_AMOUNT = 500
 
-    def create_wallet(self, name=None, wallet_dict=None):
+    def create_wallet(self, controller, name=None, wallet_dict=None):
 
         if not wallet_dict and not name:
             raise WalletBuildError(NO_PARAMS)
@@ -26,7 +26,7 @@ class WalletFactory:
         if not wallet_dict:
             wallet_dict = self.build_wallet_dict(name)
 
-        return wallets.Wallet(wallet_dict)
+        return wallets.Wallet(wallet_dict, controller)
 
     # Generates ECDSA key pair
 
@@ -53,22 +53,22 @@ class WalletFactory:
         }
 
 
-factory = WalletFactory()
+if __name__ == '__main__':
+    factory = WalletFactory()
 
-public_key = b'DPcRVZy+FCHJzdTRQb42OZ/HLH+jkdSVLestfSKu5W+p43N+Fy9mR4Y3RjcHhpGrtIvYQ4O/Pu6eBPMfXFzCag=='
+    public_key = b'DPcRVZy+FCHJzdTRQb42OZ/HLH+jkdSVLestfSKu5W+p43N+Fy9mR4Y3RjcHhpGrtIvYQ4O/Pu6eBPMfXFzCag=='
 
+    existing_wallet = {
+        'owner': 'Chris',
+        'address': hashlib.sha256(base64.b64decode(public_key)).hexdigest(),
+        'private_key': '90fbae98d03107a1f3c13de6fbab137c455a7911d7607426d5483624dff662c2',
+        'public_key': b'DPcRVZy+FCHJzdTRQb42OZ/HLH+jkdSVLestfSKu5W+p43N+Fy9mR4Y3RjcHhpGrtIvYQ4O/Pu6eBPMfXFzCag=='
+    }
 
-existing_wallet = {
-    'owner': 'Chris',
-    'address': hashlib.sha256(base64.b64decode(public_key)).hexdigest(),
-    'private_key': '90fbae98d03107a1f3c13de6fbab137c455a7911d7607426d5483624dff662c2',
-    'public_key': b'DPcRVZy+FCHJzdTRQb42OZ/HLH+jkdSVLestfSKu5W+p43N+Fy9mR4Y3RjcHhpGrtIvYQ4O/Pu6eBPMfXFzCag=='
-}
+    w2 = factory.create_wallet(name="Chris")
 
-w2 = factory.create_wallet(name="Chris")
+    w2.print_wallet()
 
-w2.print_wallet()
+    tx = w2.create_transaction('Dan', 500)
 
-tx = w2.create_transaction('Dan', 500)
-
-print(w2.verify_transaction(tx))
+    print(w2.verify_transaction(tx))
