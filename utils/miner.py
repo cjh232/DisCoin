@@ -145,4 +145,6 @@ def mine_block():
 for i in range(20):
     mine_block()
 
-blockchain.print_chain()
+# blockchain.print_chain()
+for block in blockchain:
+    print(block["index"])

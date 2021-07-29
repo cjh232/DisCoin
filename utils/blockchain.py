@@ -2,6 +2,7 @@ import hashlib
 import json
 import threading
 from datetime import date, datetime, timezone
+from contextlib import contextmanager
 
 
 class Blockchain:
@@ -29,18 +30,21 @@ class Blockchain:
     """
 
     def __init__(self, version, difficulty, arr, controller, lock):
-        self.chain = []
-        self.transactions = []
-        self.version = version
-        self.difficulty = difficulty
-        self.controller = controller
-        self.lock = lock
+        self._chain = []
+        self._transactions = []
+        self._version = version
+        self._difficulty = difficulty
+        self._controller = controller
+        self._lock = lock
 
         if len(arr) < 1:
             self.genesis_block = self.create_genesis()
-            self.chain.append(self.genesis_block)
+            self._chain.append(self.genesis_block)
         else:
             self.build_from_arr(arr)
+
+    def __iter__(self):
+        return iter(self._chain)
 
     def create_genesis(self):
         """Create the genesis block for a new blockchain
@@ -53,7 +57,7 @@ class Blockchain:
 
         genesis = {
             'index': 0,
-            "ver": self.version,
+            "ver": self._version,
             'time': time,
             'nonce': 0,
             'tx': [],
@@ -78,14 +82,14 @@ class Blockchain:
         self.chain = arr
 
     def print_chain(self):
-        for block in self.chain:
-            print(f'\nBlock {int(block["index"]) + 1} / {len(self.chain)}')
+        for block in self._chain:
+            print(f'\nBlock {int(block["index"]) + 1} / {len(self._chain)}')
             print('-----------------------------')
             for key, value in block.items():
                 print(key, value, sep=': ')
 
     def add_transaction(self, transaction):
-        self.transactions.append(transaction)
+        self._transactions.append(transaction)
 
     def is_valid(self):
 
@@ -93,10 +97,10 @@ class Blockchain:
             return True
 
         idx = 1
-        prev_block = self.chain[0]
+        prev_block = self._chain[0]
 
-        while idx < len(self.chain):
-            curr_block = self.chain[idx]
+        while idx < len(self._chain):
+            curr_block = self._chain[idx]
 
             if prev_block["hash"] != curr_block["previous_hash"]:
                 return False
@@ -109,30 +113,37 @@ class Blockchain:
 
     def offer_proof_of_work(self, block, mined_evt):
 
-        self.lock.acquire()
+        # By default miners will wait indefinitely to acquire the lock.
+        # Change this -1 value to the desired timeout in seconds.
+        with self._acquire_with_timeout(-1) as acquired:
+            if acquired and not mined_evt.is_set():
 
-        # If event is set a block has already been mined.
-        if mined_evt.is_set():
-            self.lock.release()
-            return False
+                proof = block["hash"]
 
-        result = False
-
-        proof = block["hash"]
-
-        if self.proof_is_valid(proof):
-            self.chain.append(block)
-            mined_evt.set()
-            result = True
-        else:
-            print('Proof is invalid')
-
-        self.lock.release()
-
-        return result
+                if self.proof_is_valid(proof):
+                    self._chain.append(block)
+                    mined_evt.set()
+                    return True
+                else:
+                    print('Proof is invalid')
+                    return False
+            else:
+                print(
+                    f'timeout: lock not available - Miner: {block["related_by"]}')
+                return False
 
     def proof_is_valid(self, proof):
-        return proof[:self.difficulty] == ''.zfill(self.difficulty)
+        return proof[:self._difficulty] == ''.zfill(self._difficulty)
 
     def get_last_block(self):
-        return self.chain[-1]
+        return self._chain[-1]
+
+    @contextmanager
+    def _acquire_with_timeout(self, timeout):
+        result = self._lock.acquire(timeout=timeout)
+
+        try:
+            yield result
+        finally:
+            if result:
+                self._lock.release()
